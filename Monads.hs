@@ -7,8 +7,8 @@ fulltitle: The Maybe and List Monads
 module Monads where
 
 import Control.Monad (guard)
-import qualified Data.List as List
-import qualified Data.Maybe as Maybe
+import Data.List qualified as List
+import Data.Maybe qualified as Maybe
 import Prelude hiding ((>>))
 
 {-
@@ -29,7 +29,9 @@ in the tree.
 
 -- | zip two trees together
 zipTree :: Tree a -> Tree b -> Tree (a, b)
-zipTree = undefined
+zipTree (Leaf x) (Leaf y) = Leaf (x, y)
+zipTree (Branch l1 r1) (Branch l2 r2) = Branch (zipTree l1 l2) (zipTree r1 r2)
+zipTree _ _ = error "nonmatching tree strucuture"
 
 {-
         o                     o                      o
@@ -65,7 +67,11 @@ Let's rewrite it so that the partiality is explicit in the type.
 -}
 
 zipTree1 :: Tree a -> Tree b -> Maybe (Tree (a, b))
-zipTree1 = undefined
+zipTree1 (Leaf x) (Leaf y) = Just (Leaf (x, y))
+zipTree1 (Branch l1 r1) (Branch l2 r2) = case (zipTree1 l1 l2, zipTree1 r1 r2) of
+  (Just x, Just y) -> Just (Branch x y)
+  (_, _) -> Nothing
+zipTree1 _ _ = Nothing
 
 {-
 This function is going to be our inspiration for the following development.
@@ -334,6 +340,7 @@ zipTree4 (Branch l r) (Branch l' r') =
 zipTree4 _ _ = Nothing
 
 -- >>> testZip zipTree4
+-- True
 
 {-
 What is the benefit to writing the code this way?
@@ -380,7 +387,9 @@ zipTree function using the above `do` notation for the `>>=` operator.
 zipTree5 :: Tree a -> Tree b -> Maybe (Tree (a, b))
 zipTree5 (Leaf a) (Leaf b) = return (Leaf (a, b))
 zipTree5 (Branch l r) (Branch l' r') = do
-  undefined
+  x <- zipTree5 l l'
+  y <- zipTree5 r r'
+  return (Branch x y)
 zipTree5 _ _ = Nothing
 
 -- >>> testZip zipTree5
@@ -534,13 +543,34 @@ right. )
 -}
 
 fmapMonad :: (Monad m) => (a -> b) -> m a -> m b
-fmapMonad = undefined
+fmapMonad f ma = ma >>= return . f
 
 pureMonad :: (Monad m) => a -> m a
-pureMonad = undefined
+pureMonad = return
 
 zapMonad :: (Monad m) => m (a -> b) -> m a -> m b
 zapMonad = undefined
+
+-- return :: a -> m a
+-- (>>=) :: m a -> (a - > m a) -> m b
+
+-- ~~~~~{.haskell}
+-- instance Monad Maybe where
+--    return      :: a -> Maybe a
+--    return x    =  Just x
+
+--    (>>=)       :: Maybe a -> (a -> Maybe b) -> Maybe b
+--    Nothing  >>= _ =  Nothing
+--    (Just x) >>= f =  f x
+-- ~~~~~
+
+-- instance Applicative Maybe where
+--       pure :: a -> Maybe a
+--       pure = Just
+
+--       (<*>) :: Maybe (a -> b) -> Maybe a -> Maybe b
+--       Just f  <*> Just x = Just (f x)
+--       _       <*> _      = Nothing
 
 {-
 Note that `fmapMonad` is called `liftM` and `zapMonad` is called `ap` in the
@@ -582,7 +612,20 @@ should *not* be recursive.
 -- >>> pairs0 [1,2,3] [5,6,7]
 -- [(1,5),(1,6),(1,7),(2,5),(2,6),(2,7),(3,5),(3,6),(3,7)]
 pairs0 :: [a] -> [b] -> [(a, b)]
-pairs0 xs ys = undefined
+pairs0 xs ys =
+  concat
+    ( map
+        ( \x ->
+            concat
+              ( map
+                  ( \y ->
+                      [(x, y)]
+                  )
+                  ys
+              )
+        )
+        xs
+    )
 
 testPairs :: ([Int] -> [Int] -> [(Int, Int)]) -> Bool
 testPairs ps =
@@ -708,7 +751,7 @@ Rewrite `pairs` using `>>=` and return
 -- >>> pairs2 [1,2,3] [5,6,7]
 -- [(1,5),(1,6),(1,7),(2,5),(2,6),(2,7),(3,5),(3,6),(3,7)]
 pairs2 :: [a] -> [b] -> [(a, b)]
-pairs2 xs ys = undefined
+pairs2 xs ys = xs >>= \x -> ys >>= (\y -> return (x, y))
 
 {-
 Rewrite again using do notation
@@ -717,7 +760,10 @@ Rewrite again using do notation
 -- >>> pairs3 [1,2,3] [5,6,7]
 -- [(1,5),(1,6),(1,7),(2,5),(2,6),(2,7),(3,5),(3,6),(3,7)]
 pairs3 :: [a] -> [b] -> [(a, b)]
-pairs3 xs ys = undefined
+pairs3 xs ys = do
+  x <- xs
+  y <- ys
+  return (x, y)
 
 {-
 Make sure that it still works.
